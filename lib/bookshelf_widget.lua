@@ -4366,7 +4366,7 @@ function BookshelfWidget:_openBook(book, after_open_callback)
     -- file probe below, and matched on the path prefix so a hero-hydrated
     -- record (flags stripped) is caught too.
     if self:_isRemoteRecord(book) then
-        self:_showRemoteBookInfo(book)
+        self:_openRemote(book)
         return
     end
     -- Stale records (Send-to-Kindle moved/removed the file after BIM cached
@@ -4607,7 +4607,12 @@ function BookshelfWidget:_launchReader(open_path, after_open_callback)
     if ok_dc and DocCache and DocCache.refreshSnapshot then
         pcall(function() DocCache:refreshSnapshot() end)
     end
-    ReaderUI:showReader(open_path, nil, seamless, nil, after_open_callback)
+    -- Opt-in "open comics in Meguru": a provider handed to showReader bypasses
+    -- the file-type association for this one open and writes nothing to the
+    -- book's sidecar. nil (the default) leaves KOReader to choose, as before.
+    local provider = require("lib/bookshelf_meguru").providerFor(open_path)
+    ReaderUI:showReader(open_path, provider, seamless, provider and true or nil,
+        after_open_callback)
 end
 
 -- Kobo books decrypt to a /tmp copy that can still be mid-write when
@@ -5821,7 +5826,7 @@ function BookshelfWidget:_shelfCallbacks()
                 if bw:_isRemoteRecord(b) and bw._hero_mode ~= "micro"
                         and bw._preview_book
                         and bw._preview_book.filepath == b.filepath then
-                    bw:_showRemoteBookInfo(b)
+                    bw:_openRemote(b)
                     return
                 end
                 bw:_previewBook(b, tap_t)
@@ -18307,6 +18312,18 @@ function BookshelfWidget:_opdsFetchDetailCover(book, dialog)
             self:_showRemoteBookInfo(book, { no_cover_fetch = true })
         end,
     })
+end
+
+-- _openRemote(book) -- the commit gesture for a catalog record: the download
+-- dialog, or -- when the user has made Meguru the default tap and the entry
+-- streams -- straight into Meguru. Long-press always shows the dialog, so
+-- downloading stays one gesture away.
+function BookshelfWidget:_openRemote(book)
+    if require("lib/bookshelf_meguru").opensRemoteDirectly(book) then
+        self:_opdsReadInMeguru(book)
+    else
+        self:_showRemoteBookInfo(book)
+    end
 end
 
 -- _opdsReadInMeguru(book, dialog) -- open a streamable catalog record in

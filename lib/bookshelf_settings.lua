@@ -1190,6 +1190,26 @@ function Settings:_coverDisplaySubItems()
                 BookshelfSettings.flush()
             end,
         },
+        {
+            text = _("Open comics in Meguru"),
+            help_text = _("Tapping a streamable catalog comic opens it in Meguru "
+                .. "straight away instead of showing the download dialog "
+                .. "(long-press still shows it), and local .cbz files open with "
+                .. "Meguru even if it isn't your default .cbz reader. Needs the "
+                .. "Meguru plugin. Off by default."),
+            enabled_func = function()
+                return require("lib/bookshelf_meguru").api() ~= nil
+            end,
+            checked_func = function()
+                return BookshelfSettings.isTrue("meguru_default_tap")
+            end,
+            keep_menu_open = true,
+            callback = function()
+                BookshelfSettings.save("meguru_default_tap",
+                    not BookshelfSettings.isTrue("meguru_default_tap"))
+                BookshelfSettings.flush()
+            end,
+        },
     }
 end
 

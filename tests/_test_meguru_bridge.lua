@@ -69,4 +69,57 @@ t.test("open contains a throw inside Meguru", function()
     end)
 end)
 
+-- ── default-tap opt-in ─────────────────────────────────────────────────────
+local function withSetting(on, fn)
+    local prev = package.loaded["lib/bookshelf_settings_store"]
+    package.loaded["lib/bookshelf_settings_store"] = {
+        isTrue = function(k) return on and k == "meguru_default_tap" end,
+    }
+    local ok, err = pcall(fn)
+    package.loaded["lib/bookshelf_settings_store"] = prev
+    if not ok then error(err, 0) end
+end
+local FULL = { STREAM_API = 1, openStream = function() return true end }
+
+t.test("default tap is off unless the user turned it on", function()
+    withMeguru(FULL, function()
+        withSetting(false, function()
+            eq(Bridge.opensRemoteDirectly(STREAM_BOOK), false)
+            eq(Bridge.providerFor("/b/x.cbz"), nil)
+        end)
+    end)
+end)
+
+t.test("default tap on: streamable record opens directly, plain one does not", function()
+    withMeguru(FULL, function()
+        withSetting(true, function()
+            eq(Bridge.opensRemoteDirectly(STREAM_BOOK), true)
+            eq(Bridge.opensRemoteDirectly({ opds = {} }), false)
+        end)
+    end)
+end)
+
+t.test("default tap on but Meguru gone: nothing is redirected", function()
+    package.loaded["meguru/ui/open"] = nil
+    withSetting(true, function()
+        eq(Bridge.opensRemoteDirectly(STREAM_BOOK), false)
+        eq(Bridge.providerFor("/b/x.cbz"), nil)
+    end)
+end)
+
+t.test("providerFor forces Meguru's provider for .cbz only", function()
+    local prov = { name = "meguru-provider" }
+    local prevA = package.loaded["meguru/association"]
+    package.loaded["meguru/association"] = { provider = function() return prov end }
+    withMeguru(FULL, function()
+        withSetting(true, function()
+            eq(Bridge.providerFor("/b/Vol 1.CBZ"), prov)
+            eq(Bridge.providerFor("/b/book.epub"), nil)
+            eq(Bridge.providerFor("/b/x.cbz.txt"), nil)
+            eq(Bridge.providerFor(nil), nil)
+        end)
+    end)
+    package.loaded["meguru/association"] = prevA
+end)
+
 t.done()

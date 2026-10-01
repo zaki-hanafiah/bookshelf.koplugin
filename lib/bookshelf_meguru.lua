@@ -32,6 +32,38 @@ function M.canStream(book)
     return M.api() ~= nil
 end
 
+-- ── "Open with Meguru" as the default tap ───────────────────────────────────
+-- Opt-in (off by default; the shelf's own behaviour is unchanged until the user
+-- turns it on). When on, a tap on something Meguru can read goes to Meguru:
+-- a streamable catalog entry skips the download dialog, and a local .cbz is
+-- opened with Meguru's engine whatever the file-type association says.
+M.SETTING = "meguru_default_tap"
+
+function M.defaultTap()
+    local ok, Store = pcall(require, "lib/bookshelf_settings_store")
+    return ok and Store.isTrue(M.SETTING) == true
+end
+
+-- opensRemoteDirectly(book) -> true when a tap should stream this catalog entry.
+function M.opensRemoteDirectly(book)
+    return M.defaultTap() and M.canStream(book)
+end
+
+-- providerFor(path) -> the Meguru document provider to force for a LOCAL file,
+-- or nil to let KOReader choose. Only .cbz: that is what Meguru reads besides
+-- its own stream markers, which register for themselves and need no forcing.
+function M.providerFor(path)
+    if type(path) ~= "string" or not path:lower():match("%.cbz$") then return nil end
+    if not M.defaultTap() or not M.api() then return nil end
+    local ok, Association = pcall(require, "meguru/association")
+    if not ok or type(Association) ~= "table"
+            or type(Association.provider) ~= "function" then
+        return nil
+    end
+    local ok_p, provider = pcall(Association.provider)
+    return ok_p and provider or nil
+end
+
 -- open(args) -> true | nil, reason. Straight pass-through to Meguru, pcall'd so
 -- a fault inside it can never take the shelf down with it.
 function M.open(args)
