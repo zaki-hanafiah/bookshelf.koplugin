@@ -1253,5 +1253,36 @@ do
     end
 end
 
+-- OPDS-PSE: a comic entry's page-stream link is kept on the record so the shelf
+-- can offer "Read in Meguru". Kavita spells the namespace p5:, Suwayomi pse:.
+do
+    local STREAM = "http://vaemendis.net/opds-pse/stream"
+    local DL     = { rel = "http://opds-spec.org/acquisition/open-access",
+                     type = "application/x-cbz", href = "/dl/1.cbz" }
+    local function cat(links, id)
+        return { feed = { entry = { { title = "Vol 1", id = id, link = links } } } }
+    end
+    local r = Feed.mapEntries(cat({ DL,
+        { rel = STREAM, href = "/api/1/{pageNumber}?w={width}", ["p5:count"] = "207" } },
+        "urn:kavita:296595"), "http://h/opds/s/1", "k").records[1]
+    eq(r.opds.stream_href, "http://h/api/1/{pageNumber}?w={width}", "stream href absolutised, template kept")
+    eq(r.opds.entry_id, "urn:kavita:296595", "entry id kept for re-matching")
+    local r2 = Feed.mapEntries(cat({ DL,
+        { rel = STREAM, href = "/p/{pageNumber}", ["pse:count"] = "35" } }, "x"),
+        "http://h/opds/s/1", "k").records[1]
+    eq(r2.opds.stream_href, "http://h/p/{pageNumber}", "pse: prefix accepted too")
+    local r3 = Feed.mapEntries(cat({ DL,
+        { rel = STREAM, href = "/p/{pageNumber}" } }, "x"),
+        "http://h/opds/s/1", "k").records[1]
+    eq(r3.opds.stream_href, nil, "no page count: not a stream")
+    local r4 = Feed.mapEntries(cat({ DL,
+        { rel = STREAM, href = "/p/1", ["p5:count"] = "9" } }, "x"),
+        "http://h/opds/s/1", "k").records[1]
+    eq(r4.opds.stream_href, nil, "no {pageNumber} slot: not a stream")
+    local r5 = Feed.mapEntries(cat({ DL }, "x"), "http://h/opds/s/1", "k").records[1]
+    eq(r5.opds.stream_href, nil, "plain download entry has no stream")
+    eq(r5.opds.entry_id, nil, "and no entry id")
+end
+
 print(string.format("%d pass, %d fail", pass, fail))
 if fail > 0 then os.exit(1) end

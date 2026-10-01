@@ -79,6 +79,27 @@ function M.sameHost(url_a, url_b)
 end
 
 local ACQUISITION_REL = "^http://opds%-spec%.org/acquisition"
+
+-- OPDS-PSE (page streaming): Kavita, Komga and Suwayomi advertise a templated
+-- per-page URL on a comic entry beside its download link. Bookshelf cannot read
+-- one itself; it is kept only so a record can offer "Read in Meguru". Same
+-- acceptance rule as meguru/pse.lua streamFromEntry: right rel, a
+-- {pageNumber} slot, and a page count (an attribute ending ":count", whatever
+-- the feed's namespace prefix is). A link without all three is not a stream.
+local PSE_STREAM_REL = "http://vaemendis.net/opds-pse/stream"
+local function pseStreamHref(link, feed_url)
+    if type(link) ~= "table" or link.rel ~= PSE_STREAM_REL
+            or type(link.href) ~= "string"
+            or not link.href:find("{pageNumber}", 1, true) then
+        return nil
+    end
+    for k, v in pairs(link) do
+        if type(k) == "string" and k:sub(-6) == ":count" and tonumber(v) then
+            return M.absolute(feed_url, link.href)
+        end
+    end
+    return nil
+end
 -- Acquisition rels that match ACQUISITION_REL but must never satisfy "this
 -- publication is acquirable": a sample or preview is not the work, and
 -- bookshelf's downloaded tick is a persistent claim about the user's
@@ -596,8 +617,12 @@ function M.mapEntries(catalog, feed_url, server_key)
     for idx, entry in ipairs(entry_list) do
         local title = entryTitle(entry)
         local acquisitions, thumb, image, nav_url, tiny_icon = {}, nil, nil, nil, nil
+        local stream_href
         for _j, link in ipairs(entry.link or {}) do
             local rel, ltype, href = relOf(link.rel), link.type, link.href
+            if not is_opds2 and not stream_href then
+                stream_href = pseStreamHref(link, feed_url)
+            end
             if href then
                 if rel and not SKIP_ACQ_REL[rel] and rel:match(ACQUISITION_REL)
                         and SUPPORTED_TYPE[ltype] then
@@ -648,6 +673,11 @@ function M.mapEntries(catalog, feed_url, server_key)
                 if not existing.opds.image_url and image then
                     existing.opds.image_url = image
                 end
+                if not existing.opds.stream_href and stream_href then
+                    existing.opds.stream_href = stream_href
+                    existing.opds.entry_id = type(entry.id) == "string"
+                        and entry.id ~= "" and entry.id or nil
+                end
             else
                 local id = (type(entry.id) == "string" and entry.id ~= "" and entry.id)
                     or (feed_url .. "#" .. idx)
@@ -669,6 +699,13 @@ function M.mapEntries(catalog, feed_url, server_key)
                         image_url     = image,
                         summary       = summary,
                         feed_url      = feed_url,
+                        -- Both nil for anything that is not an Atom entry with a
+                        -- page stream. entry_id is the entry's own <id> (not the
+                        -- feed_url#n fallback above): it is what lets Meguru find
+                        -- this entry again in a re-fetched feed.
+                        stream_href   = stream_href,
+                        entry_id      = stream_href and type(entry.id) == "string"
+                                        and entry.id ~= "" and entry.id or nil,
                     },
                 }
                 -- The series the top panel's series line shows, in the
