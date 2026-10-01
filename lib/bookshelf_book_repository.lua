@@ -489,6 +489,11 @@ local SUPPORTED_EXT = {
     ["md.zip"]=true, ["rtf.zip"]=true,
     -- comics
     cbz=true, cbr=true, cbt=true,
+    -- Meguru stream markers (meguru.koplugin): a tiny pointer file whose pages
+    -- live on an OPDS server. Meguru registers the DocumentRegistry provider,
+    -- so showReader opens it like any other book; the extension only exists on
+    -- disk when that plugin made one, so no provider probe is needed here.
+    meguru=true,
 }
 
 -- _supportedExt(name): the supported book extension for a filename (lowercased,
