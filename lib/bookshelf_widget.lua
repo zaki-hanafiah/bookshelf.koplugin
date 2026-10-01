@@ -18065,6 +18065,15 @@ function BookshelfWidget:_showRemoteBookInfo(book, opts)
     local dialog
     local buttons = {}
 
+    -- Streamable (OPDS-PSE) and Meguru can read it: lead with that. No download,
+    -- pages arrive as they are read, and Meguru keeps the place and syncs it.
+    if require("lib/bookshelf_meguru").canStream(book) then
+        buttons[#buttons + 1] = { {
+            text = _("Read in Meguru"),
+            callback = function() self:_opdsReadInMeguru(book, dialog) end,
+        } }
+    end
+
     -- Already downloaded (and still on disk): read it instead of fetching it
     -- again. The download rows stay below -- a re-download is how the user
     -- replaces a truncated or wrong-format copy.
@@ -18298,6 +18307,102 @@ function BookshelfWidget:_opdsFetchDetailCover(book, dialog)
             self:_showRemoteBookInfo(book, { no_cover_fetch = true })
         end,
     })
+end
+
+-- _opdsReadInMeguru(book, dialog) -- open a streamable catalog record in
+-- meguru.koplugin without downloading it.
+--
+-- Meguru needs the WHOLE feed the entry came from (its drivers read siblings,
+-- the feed title and links), and a record only carries its feed_url -- the
+-- window cache stores flat records, not raw Atom. So this re-fetches that one
+-- feed, which also hands Meguru the server's current last-read page rather than
+-- whatever was true when the shelf was browsed. Same shape as _opdsRunDownload:
+-- Wi-Fi prompt, Trapper subprocess (a dead server must not freeze the UI), and
+-- credentials sent only to the catalog's own origin.
+function BookshelfWidget:_opdsReadInMeguru(book, dialog)
+    local OpdsSource   = require("lib/bookshelf_opds_source")
+    local OpdsFeed     = require("lib/bookshelf_opds_feed")
+    local CoverFetch   = require("lib/bookshelf_cover_fetch")
+    local Meguru       = require("lib/bookshelf_meguru")
+    local Notification = require("ui/widget/notification")
+    local Trapper      = require("ui/trapper")
+
+    if self:_opdsFetchBusy() then
+        UIManager:show(Notification:new{
+            text = _("The catalog is busy. Try again in a moment."),
+        })
+        return
+    end
+    local key = type(book.filepath) == "string"
+        and book.filepath:match("^OPDS://([^/]+)/") or nil
+    local server = key and OpdsSource.getServer(key) or nil
+    local feed_url = book.opds and book.opds.feed_url
+    if not (server and type(feed_url) == "string" and feed_url ~= "") then
+        UIManager:show(Notification:new{ text = _("Couldn't open this in Meguru.") })
+        return
+    end
+    local same_origin = OpdsFeed.sameOrigin(server.url, feed_url)
+    local user     = same_origin and server.username or nil
+    local password = same_origin and server.password or nil
+    local title    = book.display_title or book.title or ""
+
+    CoverFetch.runWhenOnline(function()
+        if BookshelfWidget.live ~= self then return end
+        Trapper:wrap(function()
+            -- Re-test inside the wrap: the Wi-Fi prompt above can be answered
+            -- long after the tap (see _opdsRunDownload).
+            if self:_opdsFetchBusy() then
+                UIManager:show(Notification:new{
+                    text = _("The catalog is busy. Try again in a moment."),
+                })
+                return
+            end
+            -- The download marker, deliberately: it publishes no feed identity,
+            -- so a page turn queues behind this rather than starting a second
+            -- wrapped coroutine underneath it.
+            self._opds_download_started_at = os.time()
+            local completed, result = Trapper:dismissableRunInSubprocess(
+                function()
+                    local body, err = OpdsFeed.fetch(feed_url, user, password)
+                    return { body = body, err = err }
+                end,
+                T(_("Opening %1… (tap to cancel)"), title))
+            Trapper:clear()
+            self._opds_download_started_at = nil
+            if not completed then return end
+            local body = type(result) == "table" and result.body or nil
+            local err  = type(result) == "table" and result.err or nil
+            local catalog = body and OpdsFeed.parse(body) or nil
+            if not catalog then
+                UIManager:show(Notification:new{
+                    text = err == "auth"
+                        and T(_("Authentication failed for %1"), server.title)
+                        or T(_("Couldn't reach %1"), server.title),
+                })
+                return
+            end
+            if dialog then UIManager:close(dialog) end
+            local started, why = Meguru.open{
+                server_name = server.title,
+                feed_url    = feed_url,
+                catalog     = catalog,
+                entry_id    = book.opds.entry_id,
+                stream_href = book.opds.stream_href,
+                username    = user,
+                password    = password,
+                -- Through our own launcher, not the file manager's openFile:
+                -- _launchReader carries the bookkeeping that brings the shelf
+                -- back when the book closes.
+                opener      = function(file) self:_launchReader(file) end,
+            }
+            if not started then
+                logger.warn("[bookshelf] meguru open failed:", tostring(why))
+                UIManager:show(Notification:new{
+                    text = T(_("Meguru couldn't open %1"), title),
+                })
+            end
+        end)
+    end)
 end
 
 -- Pre-flight for one download: refuse politely when we can't do it, confirm an
