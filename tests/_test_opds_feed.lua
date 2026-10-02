@@ -1279,6 +1279,17 @@ do
         { rel = STREAM, href = "/p/1", ["p5:count"] = "9" } }, "x"),
         "http://h/opds/s/1", "k").records[1]
     eq(r4.opds.stream_href, nil, "no {pageNumber} slot: not a stream")
+    -- Komga CBR: download type Bookshelf doesn't list, but it streams.
+    local RAR = { rel = "http://opds-spec.org/acquisition",
+                  type = "application/x-rar-compressed", href = "/dl/1.cbr" }
+    local r6 = Feed.mapEntries(cat({ RAR,
+        { rel = STREAM, href = "/b/1/pages/{pageNumber}", ["pse:count"] = "20" } }, "x"),
+        "http://h/opds/s/1", "k").records[1]
+    ok(r6 ~= nil, "stream-only entry (unsupported download type) is still a book")
+    eq(r6 and r6.opds.stream_href, "http://h/b/1/pages/{pageNumber}", "and keeps its stream")
+    eq(r6 and #r6.opds.acquisitions, 0, "with no download rows")
+    eq(Feed.mapEntries(cat({ RAR }, "x"), "http://h/opds/s/1", "k").records[1], nil,
+        "unsupported download and no stream is still dropped")
     local r5 = Feed.mapEntries(cat({ DL }, "x"), "http://h/opds/s/1", "k").records[1]
     eq(r5.opds.stream_href, nil, "plain download entry has no stream")
     eq(r5.opds.entry_id, nil, "and no entry id")

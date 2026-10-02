@@ -18130,7 +18130,7 @@ function BookshelfWidget:_showRemoteBookInfo(book, opts)
             buttons[#buttons + 1] = downloadRow(acq)
         end
     end
-    if #usable == 0 then
+    if #usable == 0 and not require("lib/bookshelf_meguru").canStream(book) then
         -- Note row in the established disabled-button style: the record is real
         -- and its blurb is worth reading, there is just nothing here this
         -- device can open.

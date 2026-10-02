@@ -643,7 +643,13 @@ function M.mapEntries(catalog, feed_url, server_key)
             end
         end
 
-        if #acquisitions > 0 then
+        -- A page stream is as good as a download link for the entry to count as
+        -- a book: Komga serves CBR/CB7 under MIME types SUPPORTED_TYPE does not
+        -- list, and dropping those entries would hide books Meguru can stream.
+        -- Such a record has an empty acquisitions list; the book modal copes
+        -- (no download rows) and Repo.opdsLoneChildBook already refuses to
+        -- promote a record with nothing to download.
+        if #acquisitions > 0 or stream_href then
             local author = entryAuthor(entry)
             local merge_key = (title and author) and (title .. "\0" .. author) or nil
             local existing = merge_key and book_by_key[merge_key]
